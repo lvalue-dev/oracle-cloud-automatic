@@ -27,7 +27,7 @@ jobs:
           cache: 'pip'
 
       - name: Install dependencies
-        run: pip install oci requests
+        run: pip install -r requirements.txt
 
       - name: Run grabber
         id: grab
