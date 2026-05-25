@@ -7,6 +7,7 @@ AD 한 바퀴 순회 후 종료. cron이 재호출 담당.
 import os
 import sys
 import logging
+import re
 from datetime import datetime
 from typing import Optional
 
@@ -41,12 +42,31 @@ logging.basicConfig(
 log = logging.getLogger(__name__)
 
 
+def normalize_pem(raw: str) -> str:
+    """GitHub Secrets에서 줄바꿈이 깨진 PEM 키를 복구."""
+    # 리터럴 \n 문자열을 실제 줄바꿈으로 변환
+    raw = raw.replace("\\n", "\n")
+    # 헤더/푸터 추출
+    header_match = re.search(r"-----BEGIN ([A-Z ]+)-----", raw)
+    footer_match = re.search(r"-----END ([A-Z ]+)-----", raw)
+    if not header_match or not footer_match:
+        raise ValueError("PEM 헤더/푸터를 찾을 수 없습니다. OCI_PRIVATE_KEY 값을 확인하세요.")
+    key_type = header_match.group(1)
+    # 헤더/푸터 사이 base64 부분만 추출 후 공백 제거
+    body = re.sub(r"-----[^-]+-----", "", raw)
+    body = re.sub(r"\s+", "", body)
+    # 64자 단위로 줄바꿈
+    body_wrapped = "\n".join(body[i:i+64] for i in range(0, len(body), 64))
+    return f"-----BEGIN {key_type}-----\n{body_wrapped}\n-----END {key_type}-----\n"
+
+
 def build_oci_config() -> dict:
     if not OCI_PRIVATE_KEY:
         raise ValueError("OCI_PRIVATE_KEY 비어있음")
     key_path = "/tmp/oci_api_key.pem"
+    pem = normalize_pem(OCI_PRIVATE_KEY)
     with open(key_path, "w") as f:
-        f.write(OCI_PRIVATE_KEY)
+        f.write(pem)
     os.chmod(key_path, 0o600)
     return {
         "user": OCI_USER_OCID,
